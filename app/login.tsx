@@ -1,22 +1,19 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { useRouter } from 'expo-router';
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Alert,
+    KeyboardAvoidingView, Platform,
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
+    Text, TextInput, TouchableOpacity,
+    View,
 } from 'react-native';
-
-import { COLORS } from '../utils/constants';
+import { login } from '../src/services/authService';
+import { COLORS } from '../src/utils/constants';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -25,50 +22,56 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const canSubmit = useMemo(() => studentId.trim().length > 0 && password.length > 0, [studentId, password]);
-
   const handleLogin = async () => {
-    if (!canSubmit) {
+    if (!studentId || !password) {
       Alert.alert('Error', 'Please enter your Student ID and password.');
       return;
     }
     setLoading(true);
     try {
-      // Placeholder auth: route to check-in after "success"
-      await new Promise((r) => setTimeout(r, 600));
+      await login(studentId, password);
       router.replace('/checkin');
+    } catch (error: any) {
+      Alert.alert(
+        'Login Failed',
+        error?.response?.data?.message || 'Invalid credentials. Please try again.'
+      );
     } finally {
       setLoading(false);
     }
   };
 
   const handleBiometric = async () => {
-    try {
-      const compatible = await LocalAuthentication.hasHardwareAsync();
-      if (!compatible) {
-        Alert.alert('Error', 'Biometric authentication is not supported on this device.');
-        return;
-      }
-      const enrolled = await LocalAuthentication.isEnrolledAsync();
-      if (!enrolled) {
-        Alert.alert('Error', 'No biometrics enrolled. Set up Face ID or fingerprint first.');
-        return;
-      }
-      const result = await LocalAuthentication.authenticateAsync({
-        promptMessage: 'Authenticate to sign in',
-        fallbackLabel: 'Use password',
-      });
-      if (result.success) router.replace('/checkin');
-      else Alert.alert('Failed', 'Biometric authentication failed. Please try again.');
-    } catch {
-      Alert.alert('Error', 'Biometric authentication failed. Please try again.');
+    const compatible = await LocalAuthentication.hasHardwareAsync();
+    if (!compatible) {
+      Alert.alert('Error', 'Biometric authentication not supported on this device.');
+      return;
+    }
+    const enrolled = await LocalAuthentication.isEnrolledAsync();
+    if (!enrolled) {
+      Alert.alert('Error', 'No biometrics enrolled. Please set up Face ID or fingerprint first.');
+      return;
+    }
+    const result = await LocalAuthentication.authenticateAsync({
+      promptMessage: 'Authenticate to sign in',
+      fallbackLabel: 'Use password',
+    });
+    if (result.success) {
+      router.replace('/checkin');
+    } else {
+      Alert.alert('Failed', 'Biometric authentication failed. Please try again.');
     }
   };
 
   return (
     <SafeAreaView style={styles.safe}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
-        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
+      >
+        <ScrollView contentContainerStyle={{ flexGrow: 1 }}>
+
+          {/* Header */}
           <View style={styles.header}>
             <View style={styles.logoBox}>
               <Ionicons name="locate" size={28} color={COLORS.white} />
@@ -77,12 +80,19 @@ export default function LoginScreen() {
             <Text style={styles.appSub}>GPS-based Attendance</Text>
           </View>
 
+          {/* Form */}
           <View style={styles.form}>
             <Text style={styles.formTitle}>Sign in to your account</Text>
 
+            {/* Student ID */}
             <Text style={styles.label}>STUDENT ID</Text>
             <View style={styles.inputRow}>
-              <Ionicons name="card-outline" size={18} color={COLORS.muted} style={styles.inputIcon} />
+              <Ionicons
+                name="card-outline"
+                size={18}
+                color={COLORS.muted}
+                style={styles.inputIcon}
+              />
               <TextInput
                 style={styles.input}
                 placeholder="e.g. SCM211-0001/2022"
@@ -90,13 +100,18 @@ export default function LoginScreen() {
                 value={studentId}
                 onChangeText={setStudentId}
                 autoCapitalize="characters"
-                autoCorrect={false}
               />
             </View>
 
+            {/* Password */}
             <Text style={styles.label}>PASSWORD</Text>
             <View style={styles.inputRow}>
-              <Ionicons name="lock-closed-outline" size={18} color={COLORS.muted} style={styles.inputIcon} />
+              <Ionicons
+                name="lock-closed-outline"
+                size={18}
+                color={COLORS.muted}
+                style={styles.inputIcon}
+              />
               <TextInput
                 style={styles.input}
                 placeholder="••••••••"
@@ -104,9 +119,8 @@ export default function LoginScreen() {
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry={!showPassword}
-                autoCapitalize="none"
               />
-              <TouchableOpacity onPress={() => setShowPassword((v) => !v)} accessibilityRole="button">
+              <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
                 <Ionicons
                   name={showPassword ? 'eye-off-outline' : 'eye-outline'}
                   size={18}
@@ -115,28 +129,43 @@ export default function LoginScreen() {
               </TouchableOpacity>
             </View>
 
+            {/* Sign In Button */}
             <TouchableOpacity
-              style={[styles.signInBtn, (!canSubmit || loading) && styles.signInBtnDisabled]}
+              style={styles.signInBtn}
               onPress={handleLogin}
-              disabled={!canSubmit || loading}
-              accessibilityRole="button"
+              disabled={loading}
             >
-              {loading ? <ActivityIndicator color={COLORS.white} /> : <Text style={styles.signInText}>Sign In</Text>}
+              {loading
+                ? <ActivityIndicator color={COLORS.white} />
+                : <Text style={styles.signInText}>Sign In</Text>
+              }
             </TouchableOpacity>
 
+            {/* Divider */}
             <View style={styles.divider}>
               <View style={styles.dividerLine} />
               <Text style={styles.dividerText}>or</Text>
               <View style={styles.dividerLine} />
             </View>
 
-            <TouchableOpacity style={styles.biometricBtn} onPress={handleBiometric} accessibilityRole="button">
-              <Ionicons name="finger-print-outline" size={20} color={COLORS.primary} />
+            {/* Biometric Button */}
+            <TouchableOpacity
+              style={styles.biometricBtn}
+              onPress={handleBiometric}
+            >
+              <Ionicons
+                name="finger-print-outline"
+                size={20}
+                color={COLORS.primary}
+              />
               <Text style={styles.biometricText}>Use Biometric / Face ID</Text>
             </TouchableOpacity>
 
-            <Text style={styles.forgotText}>Forgot password? Contact your administrator</Text>
+            <Text style={styles.forgotText}>
+              Forgot password? Contact your administrator
+            </Text>
           </View>
+
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -144,13 +173,9 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1 },
   safe: {
     flex: 1,
     backgroundColor: COLORS.background,
-  },
-  scrollContent: {
-    flexGrow: 1,
   },
   header: {
     backgroundColor: COLORS.primary,
@@ -188,7 +213,7 @@ const styles = StyleSheet.create({
   formTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#111827',
+    color: '#333',
     marginBottom: 20,
   },
   label: {
@@ -215,7 +240,7 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     fontSize: 14,
-    color: '#111827',
+    color: '#333',
   },
   signInBtn: {
     backgroundColor: COLORS.primary,
@@ -224,9 +249,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 4,
     marginBottom: 20,
-  },
-  signInBtnDisabled: {
-    opacity: 0.6,
   },
   signInText: {
     color: COLORS.white,

@@ -8,6 +8,9 @@
       ]
     }
   },
+  "exclude": [
+    "app-example/**"
+  ],
   "include": [
     "**/*.ts",
     "**/*.tsx",
