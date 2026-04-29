@@ -1,50 +1,41 @@
-# Welcome to your Expo app 👋
+# AttendTrack — GPS Student Attendance App (Frontend)
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A cross-platform mobile app for GPS-based student attendance tracking built with React Native and Expo.
 
-## Get started
+## Features
+- Student ID/password and biometric (Face ID/fingerprint) login
+- GPS geofencing — attendance only marked within classroom radius
+- Real-time location detection and distance calculation
+- 14-week semester attendance tracking
+- Analytics reports with bar chart visualization
+- PDF export functionality
 
-1. Install dependencies
+## Tech Stack
+- React Native + Expo
+- Expo Router (file-based navigation)
+- TypeScript
+- Expo Location (GPS)
+- Expo Local Authentication (biometrics)
+- Axios (API calls)
+- AsyncStorage (token storage)
 
-   ```bash
-   npm install
-   ```
+## Screens
+- **Login / Auth** — Student ID + password + biometric
+- **GPS Check-in** — Map view, geofence, mark attendance
+- **Reports & Analytics** — 14-week chart, sessions table, export
 
-2. Start the app
+## Backend Repository
+https://github.com/Njela/AttendTrack-Backend
 
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
+## Setup
 ```bash
-npm run reset-project
+npm install
+npx expo start
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+## Test Credentials
+- Student ID: SCM211-0001/2022
+- Password: password123
 
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+## Course
+Mobile Computing — SMA2418
