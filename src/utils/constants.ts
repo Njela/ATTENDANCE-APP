@@ -16,4 +16,4 @@ export const GEOFENCE_RADIUS = 50;
 export const SEMESTER_WEEKS = 14;
 
 // Replace YOUR_PC_IP with your actual local IP address
-export const API_BASE_URL = 'http://localhost:3000/api';
+export const API_BASE_URL = 'https://attendtrack-backend-1vol.onrender.com/api';
