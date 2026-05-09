@@ -3,14 +3,16 @@ import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Text, TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  Modal,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text, TouchableOpacity,
+  View,
 } from 'react-native';
+import { getStudent, logout } from '../src/services/authService';
 import { COLORS, GEOFENCE_RADIUS } from '../src/utils/constants';
 
 const CLASS_LOCATION = { latitude: -1.2864, longitude: 36.8172 };
@@ -35,30 +37,40 @@ export default function CheckInScreen() {
   const [loading, setLoading] = useState(true);
   const [marking, setMarking] = useState(false);
   const [attended, setAttended] = useState(false);
+  const [profileVisible, setProfileVisible] = useState(false);
+  const [student, setStudent] = useState<any>(null);
 
   useEffect(() => {
-    (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission Denied', 'Location permission is required.');
-        setLoading(false);
-        return;
-      }
-      const loc = await Location.getCurrentPositionAsync({});
-      setLocation(loc);
-      const dist = getDistance(
-        loc.coords.latitude, loc.coords.longitude,
-        CLASS_LOCATION.latitude, CLASS_LOCATION.longitude
-      );
-      setDistance(Math.round(dist));
-      setInsideZone(dist <= GEOFENCE_RADIUS);
-      setLoading(false);
-    })();
+    loadStudent();
+    getLocation();
   }, []);
+
+  const loadStudent = async () => {
+    const data = await getStudent();
+    setStudent(data);
+  };
+
+  const getLocation = async () => {
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission Denied', 'Location permission is required.');
+      setLoading(false);
+      return;
+    }
+    const loc = await Location.getCurrentPositionAsync({});
+    setLocation(loc);
+    const dist = getDistance(
+      loc.coords.latitude, loc.coords.longitude,
+      CLASS_LOCATION.latitude, CLASS_LOCATION.longitude
+    );
+    setDistance(Math.round(dist));
+    setInsideZone(dist <= GEOFENCE_RADIUS);
+    setLoading(false);
+  };
 
   const handleMarkAttendance = async () => {
     if (!insideZone) {
-      Alert.alert('Outside Geofence', 'You must be within the classroom geofence to mark attendance.');
+      Alert.alert('Outside Geofence', 'You must be within the classroom to mark attendance.');
       return;
     }
     setMarking(true);
@@ -69,6 +81,25 @@ export default function CheckInScreen() {
     }, 1500);
   };
 
+  const handleLogout = async () => {
+    Alert.alert(
+      'Logout',
+      'Are you sure you want to logout?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Logout',
+          style: 'destructive',
+          onPress: async () => {
+            await logout();
+            setProfileVisible(false);
+            router.replace('/login');
+          },
+        },
+      ]
+    );
+  };
+
   return (
     <SafeAreaView style={styles.safe}>
 
@@ -76,11 +107,16 @@ export default function CheckInScreen() {
       <View style={styles.header}>
         <View>
           <Text style={styles.headerTitle}>GPS Check-in</Text>
-          <Text style={styles.headerSub}>Welcome, Rose S</Text>
+          <Text style={styles.headerSub}>
+            Welcome, {student?.name || 'Student'}
+          </Text>
         </View>
-        <View style={styles.avatar}>
+        <TouchableOpacity
+          style={styles.avatar}
+          onPress={() => setProfileVisible(true)}
+        >
           <Ionicons name="person" size={18} color={COLORS.white} />
-        </View>
+        </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: 80 }}>
@@ -96,7 +132,9 @@ export default function CheckInScreen() {
               <Text style={styles.gpsText}>Active</Text>
             </View>
             <View style={styles.radiusLabel}>
-              <Text style={styles.radiusText}>Geofence radius: {GEOFENCE_RADIUS}m</Text>
+              <Text style={styles.radiusText}>
+                Geofence radius: {GEOFENCE_RADIUS}m
+              </Text>
             </View>
           </View>
         </View>
@@ -122,7 +160,10 @@ export default function CheckInScreen() {
             <View style={styles.statusRow}>
               <View style={styles.statusCard}>
                 <Text style={styles.statusLabel}>Your Location</Text>
-                <Text style={[styles.statusValue, { color: insideZone ? COLORS.success : COLORS.danger }]}>
+                <Text style={[
+                  styles.statusValue,
+                  { color: insideZone ? COLORS.success : COLORS.danger }
+                ]}>
                   {insideZone ? 'Inside Zone' : 'Outside Zone'}
                 </Text>
               </View>
@@ -159,9 +200,14 @@ export default function CheckInScreen() {
 
           {/* Warning Banner */}
           <View style={styles.warning}>
-            <Ionicons name="information-circle-outline" size={16} color="#F57C00" />
+            <Ionicons
+              name="information-circle-outline"
+              size={16}
+              color="#F57C00"
+            />
             <Text style={styles.warningText}>
-              You must be within the geofence to mark attendance. Proxy sign-ins are not permitted.
+              You must be within the geofence to mark attendance.
+              Proxy sign-ins are not permitted.
             </Text>
           </View>
 
@@ -170,15 +216,136 @@ export default function CheckInScreen() {
 
       {/* Bottom Nav */}
       <View style={styles.navBar}>
-        <TouchableOpacity style={styles.navItem} onPress={() => router.push('/checkin')}>
+        <TouchableOpacity
+          style={styles.navItem}
+          onPress={() => router.push('/checkin')}
+        >
           <Ionicons name="location" size={22} color={COLORS.primary} />
-          <Text style={[styles.navLabel, { color: COLORS.primary }]}>Check-in</Text>
+          <Text style={[styles.navLabel, { color: COLORS.primary }]}>
+            Check-in
+          </Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.navItem} onPress={() => router.push('/reports')}>
+        <TouchableOpacity
+          style={styles.navItem}
+          onPress={() => router.push('/reports')}
+        >
           <Ionicons name="document-text-outline" size={22} color={COLORS.muted} />
           <Text style={styles.navLabel}>Reports</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Profile Modal */}
+      <Modal
+        visible={profileVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setProfileVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setProfileVisible(false)}
+        >
+          <View style={styles.modalCard}>
+
+            {/* Profile Header */}
+            <View style={styles.modalHeader}>
+              <View style={styles.modalAvatar}>
+                <Ionicons name="person" size={32} color={COLORS.white} />
+              </View>
+              <Text style={styles.modalName}>
+                {student?.name || 'Student'}
+              </Text>
+              <Text style={styles.modalId}>
+                {student?.studentId || '—'}
+              </Text>
+              <Text style={styles.modalCourse}>
+                {student?.course || 'Mobile Computing'}
+              </Text>
+            </View>
+
+            {/* Divider */}
+            <View style={styles.modalDivider} />
+
+            {/* Options */}
+            <TouchableOpacity
+              style={styles.modalOption}
+              onPress={() => {
+                setProfileVisible(false);
+                router.push('/reports');
+              }}
+            >
+              <View style={styles.modalOptionIcon}>
+                <Ionicons
+                  name="document-text-outline"
+                  size={20}
+                  color={COLORS.primary}
+                />
+              </View>
+              <Text style={styles.modalOptionText}>View Reports</Text>
+              <Ionicons
+                name="chevron-forward"
+                size={16}
+                color={COLORS.muted}
+              />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modalOption}
+              onPress={() => {
+                setProfileVisible(false);
+                router.push('/checkin');
+              }}
+            >
+              <View style={styles.modalOptionIcon}>
+                <Ionicons
+                  name="location-outline"
+                  size={20}
+                  color={COLORS.primary}
+                />
+              </View>
+              <Text style={styles.modalOptionText}>GPS Check-in</Text>
+              <Ionicons
+                name="chevron-forward"
+                size={16}
+                color={COLORS.muted}
+              />
+            </TouchableOpacity>
+
+            <View style={styles.modalDivider} />
+
+            <TouchableOpacity
+              style={styles.modalOption}
+              onPress={handleLogout}
+            >
+              <View style={[styles.modalOptionIcon, { backgroundColor: '#FFEBEE' }]}>
+                <Ionicons
+                  name="log-out-outline"
+                  size={20}
+                  color={COLORS.danger}
+                />
+              </View>
+              <Text style={[styles.modalOptionText, { color: COLORS.danger }]}>
+                Logout
+              </Text>
+              <Ionicons
+                name="chevron-forward"
+                size={16}
+                color={COLORS.muted}
+              />
+            </TouchableOpacity>
+
+            {/* Close Button */}
+            <TouchableOpacity
+              style={styles.modalClose}
+              onPress={() => setProfileVisible(false)}
+            >
+              <Text style={styles.modalCloseText}>Close</Text>
+            </TouchableOpacity>
+
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
     </SafeAreaView>
   );
@@ -203,7 +370,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center',
   },
   mapBox: { height: 200, backgroundColor: '#C8E6C8' },
-  mapInner: { flex: 1, justifyContent: 'center', alignItems: 'center', position: 'relative' },
+  mapInner: {
+    flex: 1, justifyContent: 'center',
+    alignItems: 'center', position: 'relative',
+  },
   geofenceCircle: {
     width: 100, height: 100, borderRadius: 50,
     borderWidth: 2, borderColor: COLORS.primary,
@@ -222,7 +392,10 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white, borderRadius: 6,
     paddingHorizontal: 8, paddingVertical: 4,
   },
-  gpsDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#4CAF50' },
+  gpsDot: {
+    width: 8, height: 8,
+    borderRadius: 4, backgroundColor: '#4CAF50',
+  },
   gpsText: { fontSize: 10, color: '#2E7D32', fontWeight: '500' },
   radiusLabel: {
     position: 'absolute', bottom: 8, left: 8,
@@ -232,12 +405,21 @@ const styles = StyleSheet.create({
   radiusText: { fontSize: 10, color: '#555' },
   body: { padding: 16 },
   card: {
-    backgroundColor: COLORS.white, borderRadius: 10,
-    padding: 14, marginBottom: 12,
+    backgroundColor: COLORS.white,
+    borderRadius: 10, padding: 14, marginBottom: 12,
   },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
-  cardLabel: { fontSize: 10, color: COLORS.muted, textTransform: 'uppercase', letterSpacing: 0.5 },
-  sessionBadge: { backgroundColor: '#E8F5E9', borderRadius: 4, paddingHorizontal: 8, paddingVertical: 2 },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between', marginBottom: 6,
+  },
+  cardLabel: {
+    fontSize: 10, color: COLORS.muted,
+    textTransform: 'uppercase', letterSpacing: 0.5,
+  },
+  sessionBadge: {
+    backgroundColor: '#E8F5E9',
+    borderRadius: 4, paddingHorizontal: 8, paddingVertical: 2,
+  },
   sessionText: { fontSize: 10, color: COLORS.success, fontWeight: '500' },
   className: { fontSize: 14, fontWeight: '600', color: '#333' },
   classTime: { fontSize: 11, color: COLORS.muted, marginTop: 2 },
@@ -271,4 +453,59 @@ const styles = StyleSheet.create({
   },
   navItem: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   navLabel: { fontSize: 10, color: COLORS.muted, marginTop: 2 },
+
+  // Modal styles
+  modalOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalCard: {
+    backgroundColor: COLORS.white,
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    paddingBottom: 32,
+  },
+  modalHeader: {
+    alignItems: 'center', paddingVertical: 24,
+  },
+  modalAvatar: {
+    width: 64, height: 64, borderRadius: 32,
+    backgroundColor: COLORS.primary,
+    justifyContent: 'center', alignItems: 'center',
+    marginBottom: 12,
+  },
+  modalName: {
+    fontSize: 18, fontWeight: '600', color: '#333',
+  },
+  modalId: {
+    fontSize: 13, color: COLORS.muted, marginTop: 4,
+  },
+  modalCourse: {
+    fontSize: 12, color: COLORS.primary,
+    marginTop: 4, fontWeight: '500',
+  },
+  modalDivider: {
+    height: 1, backgroundColor: COLORS.border,
+    marginHorizontal: 16, marginVertical: 4,
+  },
+  modalOption: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 20, paddingVertical: 14, gap: 12,
+  },
+  modalOptionIcon: {
+    width: 36, height: 36, borderRadius: 10,
+    backgroundColor: '#E3F2FD',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  modalOptionText: {
+    flex: 1, fontSize: 15, color: '#333', fontWeight: '500',
+  },
+  modalClose: {
+    marginHorizontal: 20, marginTop: 12,
+    backgroundColor: COLORS.background,
+    borderRadius: 10, paddingVertical: 14,
+    alignItems: 'center',
+  },
+  modalCloseText: {
+    fontSize: 15, color: COLORS.muted, fontWeight: '500',
+  },
 });

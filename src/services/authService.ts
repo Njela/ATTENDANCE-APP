@@ -25,3 +25,8 @@ export const getStudent = async () => {
   const data = await AsyncStorage.getItem('student');
   return data ? JSON.parse(data) : null;
 };
+
+export const isLoggedIn = async () => {
+  const token = await AsyncStorage.getItem('token');
+  return !!token;
+};

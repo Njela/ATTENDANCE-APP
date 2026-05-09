@@ -1,14 +1,21 @@
-import React, { useState } from 'react';
-import {
-  View, Text, TextInput, TouchableOpacity,
-  StyleSheet, SafeAreaView, Alert, ActivityIndicator,
-  KeyboardAvoidingView, Platform, ScrollView,
-} from 'react-native';
-import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { COLORS, API_BASE_URL } from '../src/utils/constants';
+import axios from 'axios';
+import * as LocalAuthentication from 'expo-local-authentication';
+import { useRouter } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView, Platform,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text, TextInput, TouchableOpacity,
+  View,
+} from 'react-native';
+import { API_BASE_URL, COLORS } from '../src/utils/constants';
 
 export default function RegisterScreen() {
   const router = useRouter();
@@ -20,6 +27,28 @@ export default function RegisterScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [enableBiometric, setEnableBiometric] = useState(false);
+  const [biometricAvailable, setBiometricAvailable] = useState(false);
+  const [biometricType, setBiometricType] = useState('Biometric');
+
+  useEffect(() => {
+    checkBiometricAvailability();
+  }, []);
+
+  const checkBiometricAvailability = async () => {
+    const compatible = await LocalAuthentication.hasHardwareAsync();
+    const enrolled = await LocalAuthentication.isEnrolledAsync();
+    const types = await LocalAuthentication.supportedAuthenticationTypesAsync();
+
+    if (compatible && enrolled) {
+      setBiometricAvailable(true);
+      if (types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION)) {
+        setBiometricType('Face ID');
+      } else if (types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT)) {
+        setBiometricType('Fingerprint');
+      }
+    }
+  };
 
   const handleRegister = async () => {
     // Validation
@@ -56,11 +85,37 @@ export default function RegisterScreen() {
       await AsyncStorage.setItem('token', token);
       await AsyncStorage.setItem('student', JSON.stringify(student));
 
-      Alert.alert(
-        'Success! 🎉',
-        `Welcome ${student.name}! Your account has been created.`,
-        [{ text: 'Continue', onPress: () => router.replace('/checkin') }]
-      );
+      // If biometric enabled, verify and save preference
+      if (enableBiometric && biometricAvailable) {
+        const result = await LocalAuthentication.authenticateAsync({
+          promptMessage: 'Confirm your identity to enable biometric login',
+          fallbackLabel: 'Skip',
+          cancelLabel: 'Skip',
+        });
+
+        if (result.success) {
+          await AsyncStorage.setItem('biometricEnabled', 'true');
+          Alert.alert(
+            'Success! 🎉',
+            `Welcome ${student.name}! Your account has been created and ${biometricType} login is enabled.`,
+            [{ text: 'Continue', onPress: () => router.replace('/checkin') }]
+          );
+        } else {
+          await AsyncStorage.setItem('biometricEnabled', 'false');
+          Alert.alert(
+            'Account Created! 🎉',
+            `Welcome ${student.name}! Biometric login was skipped. You can enable it later.`,
+            [{ text: 'Continue', onPress: () => router.replace('/checkin') }]
+          );
+        }
+      } else {
+        await AsyncStorage.setItem('biometricEnabled', 'false');
+        Alert.alert(
+          'Success! 🎉',
+          `Welcome ${student.name}! Your account has been created.`,
+          [{ text: 'Continue', onPress: () => router.replace('/checkin') }]
+        );
+      }
     } catch (error: any) {
       Alert.alert(
         'Registration Failed',
@@ -208,6 +263,35 @@ export default function RegisterScreen() {
               </TouchableOpacity>
             </View>
 
+            {/* Biometric Setup — only shows if device supports it */}
+            {biometricAvailable && (
+              <View style={styles.biometricToggleRow}>
+                <View style={styles.biometricToggleLeft}>
+                  <View style={styles.biometricIconBox}>
+                    <Ionicons
+                      name="finger-print-outline"
+                      size={22}
+                      color={COLORS.primary}
+                    />
+                  </View>
+                  <View>
+                    <Text style={styles.biometricToggleTitle}>
+                      Enable {biometricType} Login
+                    </Text>
+                    <Text style={styles.biometricToggleSub}>
+                      Sign in faster next time
+                    </Text>
+                  </View>
+                </View>
+                <Switch
+                  value={enableBiometric}
+                  onValueChange={setEnableBiometric}
+                  trackColor={{ false: COLORS.border, true: COLORS.primary }}
+                  thumbColor={COLORS.white}
+                />
+              </View>
+            )}
+
             {/* Register Button */}
             <TouchableOpacity
               style={styles.registerBtn}
@@ -243,119 +327,86 @@ export default function RegisterScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
+  safe: { flex: 1, backgroundColor: COLORS.background },
   header: {
     backgroundColor: COLORS.primary,
-    paddingTop: 48,
-    paddingBottom: 32,
+    paddingTop: 48, paddingBottom: 32,
     alignItems: 'center',
   },
-  backBtn: {
-    position: 'absolute',
-    top: 48,
-    left: 20,
-  },
+  backBtn: { position: 'absolute', top: 48, left: 20 },
   logoBox: {
-    width: 56,
-    height: 56,
-    borderRadius: 14,
+    width: 56, height: 56, borderRadius: 14,
     backgroundColor: 'rgba(255,255,255,0.15)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: 'center', alignItems: 'center',
     marginBottom: 12,
   },
-  appName: {
-    color: COLORS.white,
-    fontSize: 20,
-    fontWeight: '600',
-  },
-  appSub: {
-    color: 'rgba(255,255,255,0.65)',
-    fontSize: 12,
-    marginTop: 4,
-  },
+  appName: { color: COLORS.white, fontSize: 20, fontWeight: '600' },
+  appSub: { color: 'rgba(255,255,255,0.65)', fontSize: 12, marginTop: 4 },
   form: {
-    flex: 1,
-    backgroundColor: COLORS.white,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    marginTop: -20,
-    padding: 24,
+    flex: 1, backgroundColor: COLORS.white,
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    marginTop: -20, padding: 24,
   },
   formTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 20,
+    fontSize: 16, fontWeight: '600',
+    color: '#333', marginBottom: 20,
   },
   label: {
-    fontSize: 10,
-    color: COLORS.muted,
-    letterSpacing: 0.5,
-    marginBottom: 4,
+    fontSize: 10, color: COLORS.muted,
+    letterSpacing: 0.5, marginBottom: 4,
     textTransform: 'uppercase',
   },
   inputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 16,
+    flexDirection: 'row', alignItems: 'center',
+    borderWidth: 1, borderColor: COLORS.border,
+    borderRadius: 8, paddingHorizontal: 12,
+    paddingVertical: 10, marginBottom: 16,
     backgroundColor: COLORS.white,
   },
-  inputIcon: {
-    marginRight: 8,
+  inputIcon: { marginRight: 8 },
+  input: { flex: 1, fontSize: 14, color: '#333' },
+
+  // Biometric toggle
+  biometricToggleRow: {
+    flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F0F4FF',
+    borderRadius: 12, padding: 14,
+    marginBottom: 20, borderWidth: 1,
+    borderColor: '#D0DCFF',
   },
-  input: {
-    flex: 1,
-    fontSize: 14,
-    color: '#333',
+  biometricToggleLeft: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
   },
+  biometricIconBox: {
+    width: 40, height: 40, borderRadius: 10,
+    backgroundColor: '#E3F2FD',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  biometricToggleTitle: {
+    fontSize: 14, fontWeight: '600', color: '#333',
+  },
+  biometricToggleSub: {
+    fontSize: 11, color: COLORS.muted, marginTop: 2,
+  },
+
   registerBtn: {
-    backgroundColor: COLORS.primary,
-    borderRadius: 8,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginTop: 4,
+    backgroundColor: COLORS.primary, borderRadius: 8,
+    paddingVertical: 14, alignItems: 'center',
     marginBottom: 20,
   },
-  registerText: {
-    color: COLORS.white,
-    fontSize: 15,
-    fontWeight: '600',
-  },
+  registerText: { color: COLORS.white, fontSize: 15, fontWeight: '600' },
   divider: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
+    flexDirection: 'row', alignItems: 'center', marginBottom: 16,
   },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: COLORS.border,
-  },
+  dividerLine: { flex: 1, height: 1, backgroundColor: COLORS.border },
   dividerText: {
-    marginHorizontal: 10,
-    color: COLORS.muted,
-    fontSize: 11,
+    marginHorizontal: 10, color: COLORS.muted, fontSize: 11,
   },
   loginBtn: {
-    borderWidth: 1,
-    borderColor: COLORS.primary,
-    borderRadius: 8,
-    paddingVertical: 12,
-    alignItems: 'center',
-    marginBottom: 16,
+    borderWidth: 1, borderColor: COLORS.primary,
+    borderRadius: 8, paddingVertical: 12,
+    alignItems: 'center', marginBottom: 16,
   },
-  loginText: {
-    color: COLORS.primary,
-    fontSize: 14,
-    fontWeight: '500',
-  },
+  loginText: { color: COLORS.primary, fontSize: 14, fontWeight: '500' },
 });

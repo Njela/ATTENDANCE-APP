@@ -1,14 +1,20 @@
-import React, { useState } from 'react';
-import {
-  View, Text, TextInput, TouchableOpacity,
-  StyleSheet, SafeAreaView, Alert, ActivityIndicator,
-  KeyboardAvoidingView, Platform, ScrollView,
-} from 'react-native';
-import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as LocalAuthentication from 'expo-local-authentication';
+import { useRouter } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView, Platform,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text, TextInput, TouchableOpacity,
+  View,
+} from 'react-native';
+import { getStudent, getToken, login } from '../src/services/authService';
 import { COLORS } from '../src/utils/constants';
-import { login } from '../src/services/authService';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -16,6 +22,36 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [biometricAvailable, setBiometricAvailable] = useState(false);
+  const [biometricType, setBiometricType] = useState('Biometric');
+
+  useEffect(() => {
+    checkBiometric();
+    checkExistingSession();
+  }, []);
+
+  const checkExistingSession = async () => {
+    const token = await getToken();
+    if (token) {
+      router.replace('/checkin');
+    }
+  };
+
+  const checkBiometric = async () => {
+    const compatible = await LocalAuthentication.hasHardwareAsync();
+    const enrolled = await LocalAuthentication.isEnrolledAsync();
+    const biometricEnabled = await AsyncStorage.getItem('biometricEnabled');
+    const types = await LocalAuthentication.supportedAuthenticationTypesAsync();
+
+    if (compatible && enrolled && biometricEnabled === 'true') {
+      setBiometricAvailable(true);
+      if (types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION)) {
+        setBiometricType('Face ID');
+      } else if (types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT)) {
+        setBiometricType('Fingerprint');
+      }
+    }
+  };
 
   const handleLogin = async () => {
     if (!studentId || !password) {
@@ -37,20 +73,23 @@ export default function LoginScreen() {
   };
 
   const handleBiometric = async () => {
-    const compatible = await LocalAuthentication.hasHardwareAsync();
-    if (!compatible) {
-      Alert.alert('Error', 'Biometric authentication not supported on this device.');
+    const token = await getToken();
+    const savedStudent = await getStudent();
+
+    if (!token || !savedStudent) {
+      Alert.alert(
+        'No Account Found',
+        'Please sign in with your Student ID and password first, or create an account.',
+      );
       return;
     }
-    const enrolled = await LocalAuthentication.isEnrolledAsync();
-    if (!enrolled) {
-      Alert.alert('Error', 'No biometrics enrolled. Please set up Face ID or fingerprint first.');
-      return;
-    }
+
     const result = await LocalAuthentication.authenticateAsync({
-      promptMessage: 'Authenticate to sign in',
-      fallbackLabel: 'Use password',
+      promptMessage: `Sign in as ${savedStudent.name}`,
+      fallbackLabel: 'Use password instead',
+      cancelLabel: 'Cancel',
     });
+
     if (result.success) {
       router.replace('/checkin');
     } else {
@@ -136,43 +175,61 @@ export default function LoginScreen() {
               }
             </TouchableOpacity>
 
-            {/* Divider */}
-            <View style={styles.divider}>
-              <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>or</Text>
-              <View style={styles.dividerLine} />
-            </View>
+            {/* Biometric Button — only shows if enabled during registration */}
+            {biometricAvailable && (
+              <>
+                <View style={styles.divider}>
+                  <View style={styles.dividerLine} />
+                  <Text style={styles.dividerText}>or</Text>
+                  <View style={styles.dividerLine} />
+                </View>
 
-            {/* Biometric Button */}
-            <TouchableOpacity
-              style={styles.biometricBtn}
-              onPress={handleBiometric}
-            >
-              <Ionicons
-                name="finger-print-outline"
-                size={20}
-                color={COLORS.primary}
-              />
-              <Text style={styles.biometricText}>Use Biometric / Face ID</Text>
-            </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.biometricBtn}
+                  onPress={handleBiometric}
+                >
+                  <Ionicons
+                    name="finger-print-outline"
+                    size={20}
+                    color={COLORS.primary}
+                  />
+                  <Text style={styles.biometricText}>
+                    Use {biometricType} / Face ID
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
 
             {/* Forgot Password */}
             <Text style={styles.forgotText}>
               Forgot password? Contact your administrator
             </Text>
 
-            {/* Create Account Link */}
+            {/* Divider */}
+            <View style={styles.divider}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>new student?</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            {/* Create Account Button — prominent */}
             <TouchableOpacity
               style={styles.createAccountBtn}
               onPress={() => router.push('/register')}
             >
+              <Ionicons
+                name="person-add-outline"
+                size={18}
+                color={COLORS.primary}
+              />
               <Text style={styles.createAccountText}>
-                Don't have an account?{' '}
-                <Text style={{ color: COLORS.primary, fontWeight: '600' }}>
-                  Create one
-                </Text>
+                Create Account
               </Text>
             </TouchableOpacity>
+
+            <Text style={styles.createAccountSub}>
+              Register using your student ID to get started
+            </Text>
 
           </View>
         </ScrollView>
@@ -182,10 +239,7 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
+  safe: { flex: 1, backgroundColor: COLORS.background },
   header: {
     backgroundColor: COLORS.primary,
     paddingTop: 48,
@@ -193,121 +247,84 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   logoBox: {
-    width: 56,
-    height: 56,
-    borderRadius: 14,
+    width: 56, height: 56, borderRadius: 14,
     backgroundColor: 'rgba(255,255,255,0.15)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: 'center', alignItems: 'center',
     marginBottom: 12,
   },
-  appName: {
-    color: COLORS.white,
-    fontSize: 20,
-    fontWeight: '600',
-  },
-  appSub: {
-    color: 'rgba(255,255,255,0.65)',
-    fontSize: 12,
-    marginTop: 4,
-  },
+  appName: { color: COLORS.white, fontSize: 20, fontWeight: '600' },
+  appSub: { color: 'rgba(255,255,255,0.65)', fontSize: 12, marginTop: 4 },
   form: {
-    flex: 1,
-    backgroundColor: COLORS.white,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    marginTop: -20,
-    padding: 24,
+    flex: 1, backgroundColor: COLORS.white,
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    marginTop: -20, padding: 24,
   },
   formTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 20,
+    fontSize: 16, fontWeight: '600',
+    color: '#333', marginBottom: 20,
   },
   label: {
-    fontSize: 10,
-    color: COLORS.muted,
-    letterSpacing: 0.5,
-    marginBottom: 4,
+    fontSize: 10, color: COLORS.muted,
+    letterSpacing: 0.5, marginBottom: 4,
     textTransform: 'uppercase',
   },
   inputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 16,
+    flexDirection: 'row', alignItems: 'center',
+    borderWidth: 1, borderColor: COLORS.border,
+    borderRadius: 8, paddingHorizontal: 12,
+    paddingVertical: 10, marginBottom: 16,
     backgroundColor: COLORS.white,
   },
-  inputIcon: {
-    marginRight: 8,
-  },
-  input: {
-    flex: 1,
-    fontSize: 14,
-    color: '#333',
-  },
+  inputIcon: { marginRight: 8 },
+  input: { flex: 1, fontSize: 14, color: '#333' },
   signInBtn: {
-    backgroundColor: COLORS.primary,
-    borderRadius: 8,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginTop: 4,
-    marginBottom: 20,
+    backgroundColor: COLORS.primary, borderRadius: 8,
+    paddingVertical: 14, alignItems: 'center',
+    marginTop: 4, marginBottom: 20,
   },
-  signInText: {
-    color: COLORS.white,
-    fontSize: 15,
-    fontWeight: '600',
-  },
+  signInText: { color: COLORS.white, fontSize: 15, fontWeight: '600' },
   divider: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 20,
+    flexDirection: 'row', alignItems: 'center', marginBottom: 16,
   },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: COLORS.border,
-  },
+  dividerLine: { flex: 1, height: 1, backgroundColor: COLORS.border },
   dividerText: {
-    marginHorizontal: 12,
-    color: COLORS.muted,
-    fontSize: 12,
+    marginHorizontal: 12, color: COLORS.muted, fontSize: 12,
   },
   biometricBtn: {
+    flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1, borderColor: COLORS.primary,
+    borderRadius: 8, paddingVertical: 12,
+    gap: 8, marginBottom: 16,
+  },
+  biometricText: {
+    color: COLORS.primary, fontSize: 14, fontWeight: '500',
+  },
+  forgotText: {
+    textAlign: 'center', fontSize: 11,
+    color: COLORS.muted, marginBottom: 20,
+  },
+  createAccountBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: COLORS.primary,
-    borderRadius: 8,
-    paddingVertical: 12,
     gap: 8,
-    marginBottom: 16,
+    backgroundColor: '#F0F4FF',
+    borderWidth: 1,
+    borderColor: '#D0DCFF',
+    borderRadius: 10,
+    paddingVertical: 14,
+    marginBottom: 8,
   },
-  biometricText: {
+  createAccountText: {
     color: COLORS.primary,
-    fontSize: 14,
-    fontWeight: '500',
+    fontSize: 15,
+    fontWeight: '600',
   },
-  forgotText: {
+  createAccountSub: {
     textAlign: 'center',
     fontSize: 11,
     color: COLORS.muted,
-    marginBottom: 12,
-  },
-  createAccountBtn: {
-    marginTop: 4,
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
-  createAccountText: {
-    fontSize: 13,
-    color: COLORS.muted,
+    marginBottom: 16,
   },
 });
