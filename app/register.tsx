@@ -1,21 +1,29 @@
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import axios from 'axios';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
-  KeyboardAvoidingView, Platform,
-  SafeAreaView,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Switch,
-  Text, TextInput, TouchableOpacity,
+  Text,
   View,
 } from 'react-native';
-import { API_BASE_URL, COLORS } from '../src/utils/constants';
+import { PrimaryButton } from '../src/components/ui/PrimaryButton';
+import { Screen } from '../src/components/ui/Screen';
+import { TextField } from '../src/components/ui/TextField';
+import {
+  getPostLoginRoute,
+  getSession,
+  mapAuthError,
+  registerAccount,
+  setBiometricPreference,
+} from '../src/services/authService';
+import { theme } from '../src/theme/tokens';
 
 export default function RegisterScreen() {
   const router = useRouter();
@@ -23,390 +31,234 @@ export default function RegisterScreen() {
   const [studentId, setStudentId] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirm, setShowConfirm] = useState(false);
+  const [confirm, setConfirm] = useState('');
   const [loading, setLoading] = useState(false);
-  const [enableBiometric, setEnableBiometric] = useState(false);
-  const [biometricAvailable, setBiometricAvailable] = useState(false);
-  const [biometricType, setBiometricType] = useState('Biometric');
+  const [enableBio, setEnableBio] = useState(false);
+  const [bioHardware, setBioHardware] = useState(false);
+  const [bioLabel, setBioLabel] = useState('Biometric');
 
   useEffect(() => {
-    checkBiometricAvailability();
+    void (async () => {
+      const session = await getSession();
+      if (session) {
+        router.replace(await getPostLoginRoute(session));
+      }
+    })();
+  }, [router]);
+
+  useEffect(() => {
+    void (async () => {
+      const ok = await LocalAuthentication.hasHardwareAsync();
+      const enrolled = await LocalAuthentication.isEnrolledAsync();
+      setBioHardware(ok && enrolled);
+      const types = await LocalAuthentication.supportedAuthenticationTypesAsync();
+      if (types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION)) {
+        setBioLabel('Face ID');
+      } else if (types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT)) {
+        setBioLabel('Fingerprint');
+      }
+    })();
   }, []);
 
-  const checkBiometricAvailability = async () => {
-    const compatible = await LocalAuthentication.hasHardwareAsync();
-    const enrolled = await LocalAuthentication.isEnrolledAsync();
-    const types = await LocalAuthentication.supportedAuthenticationTypesAsync();
-
-    if (compatible && enrolled) {
-      setBiometricAvailable(true);
-      if (types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION)) {
-        setBiometricType('Face ID');
-      } else if (types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT)) {
-        setBiometricType('Fingerprint');
-      }
-    }
-  };
-
-  const handleRegister = async () => {
-    // Validation
-    if (!name || !studentId || !email || !password || !confirmPassword) {
-      Alert.alert('Error', 'Please fill in all fields.');
+  const submit = async () => {
+    if (!name.trim() || !studentId.trim() || !email.trim() || !password || !confirm) {
+      Alert.alert('Missing fields', 'Fill in every field.');
       return;
     }
-    if (password !== confirmPassword) {
-      Alert.alert('Error', 'Passwords do not match.');
+    if (password !== confirm) {
+      Alert.alert('Passwords', 'Passwords do not match.');
       return;
     }
     if (password.length < 6) {
-      Alert.alert('Error', 'Password must be at least 6 characters.');
+      Alert.alert('Password', 'Use at least 6 characters.');
       return;
     }
     if (!email.includes('@')) {
-      Alert.alert('Error', 'Please enter a valid email address.');
+      Alert.alert('Email', 'Enter a valid contact email.');
       return;
     }
-
     setLoading(true);
     try {
-      const response = await axios.post(`${API_BASE_URL}/auth/register`, {
+      const { session: newSession } = await registerAccount({
+        studentId,
         name,
-        studentId: studentId.toUpperCase(),
-        email: email.toLowerCase(),
+        contactEmail: email,
         password,
         course: 'Mobile Computing',
       });
 
-      const { token, student } = response.data;
-
-      // Save token and student info
-      await AsyncStorage.setItem('token', token);
-      await AsyncStorage.setItem('student', JSON.stringify(student));
-
-      // If biometric enabled, verify and save preference
-      if (enableBiometric && biometricAvailable) {
-        const result = await LocalAuthentication.authenticateAsync({
-          promptMessage: 'Confirm your identity to enable biometric login',
-          fallbackLabel: 'Skip',
+      if (enableBio && bioHardware) {
+        const auth = await LocalAuthentication.authenticateAsync({
+          promptMessage: 'Confirm to enable quick unlock',
           cancelLabel: 'Skip',
+          fallbackLabel: 'Skip',
         });
-
-        if (result.success) {
-          await AsyncStorage.setItem('biometricEnabled', 'true');
-          Alert.alert(
-            'Success! 🎉',
-            `Welcome ${student.name}! Your account has been created and ${biometricType} login is enabled.`,
-            [{ text: 'Continue', onPress: () => router.replace('/checkin') }]
-          );
-        } else {
-          await AsyncStorage.setItem('biometricEnabled', 'false');
-          Alert.alert(
-            'Account Created! 🎉',
-            `Welcome ${student.name}! Biometric login was skipped. You can enable it later.`,
-            [{ text: 'Continue', onPress: () => router.replace('/checkin') }]
-          );
+        await setBiometricPreference(auth.success);
+        if (!auth.success) {
+          Alert.alert('Account ready', `${bioLabel} unlock was skipped.`);
         }
       } else {
-        await AsyncStorage.setItem('biometricEnabled', 'false');
-        Alert.alert(
-          'Success! 🎉',
-          `Welcome ${student.name}! Your account has been created.`,
-          [{ text: 'Continue', onPress: () => router.replace('/checkin') }]
-        );
+        await setBiometricPreference(false);
       }
-    } catch (error: any) {
-      Alert.alert(
-        'Registration Failed',
-        error?.response?.data?.message || 'Something went wrong. Please try again.'
-      );
+
+      router.replace(await getPostLoginRoute(newSession));
+    } catch (e) {
+      Alert.alert('Registration failed', mapAuthError(e));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <Screen edges={['top']}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={styles.flex}
       >
-        <ScrollView contentContainerStyle={{ flexGrow: 1 }}>
-
-          {/* Header */}
-          <View style={styles.header}>
-            <TouchableOpacity
-              style={styles.backBtn}
-              onPress={() => router.back()}
-            >
-              <Ionicons name="arrow-back" size={22} color={COLORS.white} />
-            </TouchableOpacity>
-            <View style={styles.logoBox}>
-              <Ionicons name="person-add" size={28} color={COLORS.white} />
+        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+          <View style={styles.hero}>
+            <Pressable style={styles.back} onPress={() => router.back()} hitSlop={12}>
+              <Ionicons name="arrow-back" size={22} color="#fff" />
+            </Pressable>
+            <View style={styles.logo}>
+              <Ionicons name="person-add" size={26} color="#fff" />
             </View>
-            <Text style={styles.appName}>Create Account</Text>
-            <Text style={styles.appSub}>Register for AttendTrack</Text>
+            <Text style={styles.title}>Create account</Text>
+            <Text style={styles.subtitle}>Join your class on AttendTrack</Text>
           </View>
 
-          {/* Form */}
-          <View style={styles.form}>
-            <Text style={styles.formTitle}>Student Registration</Text>
+          <View style={styles.sheet}>
+            <TextField
+              label="Full name"
+              icon="person-outline"
+              placeholder="Your name"
+              value={name}
+              onChangeText={setName}
+              autoCapitalize="words"
+            />
+            <TextField
+              label="Student ID"
+              icon="id-card-outline"
+              placeholder="e.g. SCM211-0001/2022"
+              value={studentId}
+              onChangeText={setStudentId}
+              autoCapitalize="characters"
+            />
+            <TextField
+              label="Sign-in email"
+              icon="mail-outline"
+              placeholder="you@university.edu"
+              value={email}
+              onChangeText={setEmail}
+              autoCapitalize="none"
+              keyboardType="email-address"
+            />
+            <Text style={styles.emailHint}>
+              Use a real inbox you can access. This is your username for sign-in (with your password).
+            </Text>
+            <TextField
+              label="Password"
+              icon="lock-closed-outline"
+              placeholder="Min. 6 characters"
+              value={password}
+              onChangeText={setPassword}
+              secureToggle
+              autoCapitalize="none"
+            />
+            <TextField
+              label="Confirm password"
+              icon="lock-closed-outline"
+              placeholder="Repeat password"
+              value={confirm}
+              onChangeText={setConfirm}
+              secureToggle
+              autoCapitalize="none"
+            />
 
-            {/* Full Name */}
-            <Text style={styles.label}>FULL NAME</Text>
-            <View style={styles.inputRow}>
-              <Ionicons
-                name="person-outline"
-                size={18}
-                color={COLORS.muted}
-                style={styles.inputIcon}
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="e.g. Rose Njela"
-                placeholderTextColor={COLORS.muted}
-                value={name}
-                onChangeText={setName}
-                autoCapitalize="words"
-              />
-            </View>
-
-            {/* Student ID */}
-            <Text style={styles.label}>STUDENT ID</Text>
-            <View style={styles.inputRow}>
-              <Ionicons
-                name="card-outline"
-                size={18}
-                color={COLORS.muted}
-                style={styles.inputIcon}
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="e.g. SCM211-0001/2022"
-                placeholderTextColor={COLORS.muted}
-                value={studentId}
-                onChangeText={setStudentId}
-                autoCapitalize="characters"
-              />
-            </View>
-
-            {/* Email */}
-            <Text style={styles.label}>EMAIL</Text>
-            <View style={styles.inputRow}>
-              <Ionicons
-                name="mail-outline"
-                size={18}
-                color={COLORS.muted}
-                style={styles.inputIcon}
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="e.g. rose@student.ac.ke"
-                placeholderTextColor={COLORS.muted}
-                value={email}
-                onChangeText={setEmail}
-                autoCapitalize="none"
-                keyboardType="email-address"
-              />
-            </View>
-
-            {/* Password */}
-            <Text style={styles.label}>PASSWORD</Text>
-            <View style={styles.inputRow}>
-              <Ionicons
-                name="lock-closed-outline"
-                size={18}
-                color={COLORS.muted}
-                style={styles.inputIcon}
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Min. 6 characters"
-                placeholderTextColor={COLORS.muted}
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry={!showPassword}
-              />
-              <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-                <Ionicons
-                  name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                  size={18}
-                  color={COLORS.muted}
-                />
-              </TouchableOpacity>
-            </View>
-
-            {/* Confirm Password */}
-            <Text style={styles.label}>CONFIRM PASSWORD</Text>
-            <View style={styles.inputRow}>
-              <Ionicons
-                name="lock-closed-outline"
-                size={18}
-                color={COLORS.muted}
-                style={styles.inputIcon}
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Re-enter your password"
-                placeholderTextColor={COLORS.muted}
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
-                secureTextEntry={!showConfirm}
-              />
-              <TouchableOpacity onPress={() => setShowConfirm(!showConfirm)}>
-                <Ionicons
-                  name={showConfirm ? 'eye-off-outline' : 'eye-outline'}
-                  size={18}
-                  color={COLORS.muted}
-                />
-              </TouchableOpacity>
-            </View>
-
-            {/* Biometric Setup — only shows if device supports it */}
-            {biometricAvailable && (
-              <View style={styles.biometricToggleRow}>
-                <View style={styles.biometricToggleLeft}>
-                  <View style={styles.biometricIconBox}>
-                    <Ionicons
-                      name="finger-print-outline"
-                      size={22}
-                      color={COLORS.primary}
-                    />
-                  </View>
-                  <View>
-                    <Text style={styles.biometricToggleTitle}>
-                      Enable {biometricType} Login
-                    </Text>
-                    <Text style={styles.biometricToggleSub}>
-                      Sign in faster next time
-                    </Text>
-                  </View>
+            {bioHardware ? (
+              <View style={styles.bioRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.bioTitle}>Enable {bioLabel}</Text>
+                  <Text style={styles.bioSub}>Unlock faster next time</Text>
                 </View>
-                <Switch
-                  value={enableBiometric}
-                  onValueChange={setEnableBiometric}
-                  trackColor={{ false: COLORS.border, true: COLORS.primary }}
-                  thumbColor={COLORS.white}
-                />
+                <Switch value={enableBio} onValueChange={setEnableBio} />
               </View>
-            )}
+            ) : null}
 
-            {/* Register Button */}
-            <TouchableOpacity
-              style={styles.registerBtn}
-              onPress={handleRegister}
-              disabled={loading}
-            >
-              {loading
-                ? <ActivityIndicator color={COLORS.white} />
-                : <Text style={styles.registerText}>Create Account</Text>
-              }
-            </TouchableOpacity>
+            <PrimaryButton title="Create account" loading={loading} onPress={submit} />
 
-            {/* Divider */}
-            <View style={styles.divider}>
-              <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>already have an account?</Text>
-              <View style={styles.dividerLine} />
-            </View>
+            <Pressable style={styles.staffRow} onPress={() => router.push('/staff/register')}>
+              <Ionicons name="school-outline" size={18} color={theme.colors.accent} />
+              <Text style={styles.staffLink}>Lecturer? Create a staff account</Text>
+            </Pressable>
 
-            {/* Back to Login */}
-            <TouchableOpacity
-              style={styles.loginBtn}
-              onPress={() => router.back()}
-            >
-              <Text style={styles.loginText}>Sign In Instead</Text>
-            </TouchableOpacity>
-
+            <Pressable style={styles.signIn} onPress={() => router.back()}>
+              <Text style={styles.signInText}>Already have an account? Sign in</Text>
+            </Pressable>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: COLORS.background },
-  header: {
-    backgroundColor: COLORS.primary,
-    paddingTop: 48, paddingBottom: 32,
+  flex: { flex: 1 },
+  scroll: { flexGrow: 1, paddingBottom: 32 },
+  hero: {
+    paddingTop: 48,
+    paddingBottom: 36,
+    paddingHorizontal: theme.space.xl,
+    backgroundColor: theme.colors.accent,
     alignItems: 'center',
   },
-  backBtn: { position: 'absolute', top: 48, left: 20 },
-  logoBox: {
-    width: 56, height: 56, borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    justifyContent: 'center', alignItems: 'center',
-    marginBottom: 12,
+  back: { position: 'absolute', left: theme.space.lg, top: 48 },
+  logo: {
+    width: 56,
+    height: 56,
+    borderRadius: theme.radius.lg,
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: theme.space.lg,
   },
-  appName: { color: COLORS.white, fontSize: 20, fontWeight: '600' },
-  appSub: { color: 'rgba(255,255,255,0.65)', fontSize: 12, marginTop: 4 },
-  form: {
-    flex: 1, backgroundColor: COLORS.white,
-    borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    marginTop: -20, padding: 24,
+  title: { color: '#fff', fontSize: 24, fontWeight: '700' },
+  subtitle: { color: 'rgba(255,255,255,0.72)', marginTop: theme.space.sm },
+  sheet: {
+    marginTop: -theme.radius.xl,
+    backgroundColor: theme.colors.surface,
+    borderTopLeftRadius: theme.radius.xl,
+    borderTopRightRadius: theme.radius.xl,
+    padding: theme.space.xl,
   },
-  formTitle: {
-    fontSize: 16, fontWeight: '600',
-    color: '#333', marginBottom: 20,
+  bioRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: theme.space.lg,
+    borderRadius: theme.radius.lg,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    marginBottom: theme.space.lg,
+    backgroundColor: theme.colors.surfaceAlt,
   },
-  label: {
-    fontSize: 10, color: COLORS.muted,
-    letterSpacing: 0.5, marginBottom: 4,
-    textTransform: 'uppercase',
+  bioTitle: { fontWeight: '600', color: theme.colors.text },
+  bioSub: { color: theme.colors.textMuted, fontSize: theme.font.small, marginTop: 2 },
+  emailHint: {
+    fontSize: theme.font.micro,
+    color: theme.colors.textMuted,
+    marginTop: -8,
+    marginBottom: theme.space.md,
+    lineHeight: 16,
   },
-  inputRow: {
-    flexDirection: 'row', alignItems: 'center',
-    borderWidth: 1, borderColor: COLORS.border,
-    borderRadius: 8, paddingHorizontal: 12,
-    paddingVertical: 10, marginBottom: 16,
-    backgroundColor: COLORS.white,
+  signIn: { alignItems: 'center', marginTop: theme.space.lg },
+  signInText: { color: theme.colors.accent, fontWeight: '600' },
+  staffRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: theme.space.md,
+    marginTop: theme.space.sm,
   },
-  inputIcon: { marginRight: 8 },
-  input: { flex: 1, fontSize: 14, color: '#333' },
-
-  // Biometric toggle
-  biometricToggleRow: {
-    flexDirection: 'row', alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#F0F4FF',
-    borderRadius: 12, padding: 14,
-    marginBottom: 20, borderWidth: 1,
-    borderColor: '#D0DCFF',
-  },
-  biometricToggleLeft: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-  },
-  biometricIconBox: {
-    width: 40, height: 40, borderRadius: 10,
-    backgroundColor: '#E3F2FD',
-    justifyContent: 'center', alignItems: 'center',
-  },
-  biometricToggleTitle: {
-    fontSize: 14, fontWeight: '600', color: '#333',
-  },
-  biometricToggleSub: {
-    fontSize: 11, color: COLORS.muted, marginTop: 2,
-  },
-
-  registerBtn: {
-    backgroundColor: COLORS.primary, borderRadius: 8,
-    paddingVertical: 14, alignItems: 'center',
-    marginBottom: 20,
-  },
-  registerText: { color: COLORS.white, fontSize: 15, fontWeight: '600' },
-  divider: {
-    flexDirection: 'row', alignItems: 'center', marginBottom: 16,
-  },
-  dividerLine: { flex: 1, height: 1, backgroundColor: COLORS.border },
-  dividerText: {
-    marginHorizontal: 10, color: COLORS.muted, fontSize: 11,
-  },
-  loginBtn: {
-    borderWidth: 1, borderColor: COLORS.primary,
-    borderRadius: 8, paddingVertical: 12,
-    alignItems: 'center', marginBottom: 16,
-  },
-  loginText: { color: COLORS.primary, fontSize: 14, fontWeight: '500' },
+  staffLink: { color: theme.colors.accent, fontWeight: '600', fontSize: theme.font.small },
 });

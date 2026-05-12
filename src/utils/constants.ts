@@ -1,19 +1,20 @@
-export const COLORS = {
-  primary: '#1A3C8F',
-  white: '#FFFFFF',
-  background: '#F5F6FA',
-  border: '#E0E0E0',
-  muted: '#888888',
-  success: '#2E7D32',
-  successBg: '#E8F5E9',
-  danger: '#C62828',
-  dangerBg: '#FFEBEE',
-  warning: '#E65100',
-  warningBorder: '#FFB74D',
-} as const;
+import { theme } from '../theme/tokens';
 
-export const GEOFENCE_RADIUS = 50;
 export const SEMESTER_WEEKS = 14;
 
-// Replace YOUR_PC_IP with your actual local IP address
-export const API_BASE_URL = 'https://attendtrack-backend-1vol.onrender.com/api';
+/** @deprecated use theme.colors */
+export const COLORS = {
+  primary: theme.colors.accent,
+  white: '#FFFFFF',
+  background: theme.colors.surfaceAlt,
+  border: theme.colors.border,
+  muted: theme.colors.textMuted,
+  success: theme.colors.success,
+  successBg: theme.colors.successBg,
+  danger: theme.colors.danger,
+  dangerBg: theme.colors.dangerBg,
+  warning: theme.colors.warning,
+  warningBorder: '#FBBF24',
+} as const;
+
+export { theme };
